@@ -1,0 +1,1818 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>便签墙</title>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background-image: linear-gradient(0deg, #eee 1px, transparent 0),
+          linear-gradient(90deg, #eee 1px, transparent 0);
+        background-size: 30px 30px;
+        color: #333;
+        min-height: 100dvh;
+        overflow: hidden;
+      }
+
+      body.has-maximized-card {
+        overflow: hidden;
+      }
+
+      body.is-mobile {
+        overflow-y: auto;
+      }
+
+      #board {
+        position: relative;
+        width: 100vw;
+        height: 100dvh;
+        overflow: hidden;
+      }
+
+      body.is-mobile #board {
+        height: auto;
+        min-height: 100dvh;
+      }
+
+      .card {
+        position: absolute;
+        width: 220px;
+        border-radius: 12px;
+        box-shadow: 0 16px 35px rgba(0, 0, 0, 0.2);
+        background: #fff;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        overflow: hidden;
+        opacity: 0;
+        transform-origin: center;
+        transition: transform 0.35s ease, opacity 0.35s ease, left 0.35s ease,
+          top 0.35s ease, width 0.35s ease, height 0.35s ease,
+          border-radius 0.35s ease;
+      }
+
+      .card.dragging {
+        transition: none;
+        box-shadow: 0 22px 45px rgba(0, 0, 0, 0.35);
+      }
+
+      .card.maximized {
+        position: fixed;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        height: 100dvh;
+        border-radius: 0;
+        box-shadow: 0 28px 60px rgba(0, 0, 0, 0.4);
+      }
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 12px;
+        background: rgba(255, 255, 255, 0.7);
+        cursor: grab;
+        user-select: none;
+        touch-action: pan-y;
+      }
+
+      .card-header.dragging {
+        cursor: grabbing;
+      }
+
+      .window-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .window-controls .control {
+        position: relative;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        border: 1px solid rgba(0, 0, 0, 0.08);
+        background: #ccc;
+        cursor: pointer;
+        outline: none;
+        padding: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .window-controls .control.close {
+        background: #ff5f57;
+        border-color: #e0443e;
+      }
+
+      .window-controls .control.minimize {
+        background: #febb2e;
+        border-color: #dea123;
+      }
+
+      .window-controls .control.maximize {
+        background: #28c840;
+        border-color: #1aab2c;
+      }
+
+      .window-controls .control::after {
+        content: "";
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        opacity: 0;
+        transition: opacity 0.2s ease;
+      }
+
+      .card-header:hover .window-controls .control::after {
+        opacity: 0.8;
+      }
+
+      .window-controls .control.close::after {
+        content: "×";
+        width: auto;
+        height: auto;
+        background: none;
+        font-size: 10px;
+        line-height: 1;
+        font-weight: 700;
+        color: rgba(0, 0, 0, 0.7);
+      }
+
+      .window-controls .control.minimize::after {
+        width: 6px;
+        height: 2px;
+        background: rgba(0, 0, 0, 0.6);
+      }
+
+      .window-controls .control.maximize::after {
+        width: 6px;
+        height: 6px;
+        background: linear-gradient(
+          45deg,
+          rgba(0, 0, 0, 0.6) 0%,
+          rgba(0, 0, 0, 0.6) 45%,
+          transparent 45%,
+          transparent 55%,
+          rgba(0, 0, 0, 0.6) 55%,
+          rgba(0, 0, 0, 0.6) 100%
+        );
+      }
+
+      .card-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: rgba(0, 0, 0, 0.55);
+        padding-left: 10px;
+        flex: 1;
+      }
+
+      .card-body {
+        padding: 16px;
+        font-size: 16px;
+        line-height: 1.4;
+        font-weight: 600;
+        color: rgba(0, 0, 0, 0.72);
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        white-space: normal;
+      }
+
+      .card.maximized {
+        display: flex;
+        flex-direction: column;
+      }
+
+      .card.maximized .card-title {
+        display: none;
+      }
+
+      .card.maximized .card-body {
+        flex: 1;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        height: 100%;
+        text-align: center;
+        padding: clamp(32px, min(10vw, 10vh), 128px);
+        padding-top: clamp(72px, min(14vw, 14vh), 192px);
+        font-size: clamp(48px, min(18vw, 18vh), 200px);
+        line-height: 1.05;
+      }
+
+      @media (max-width: 768px) {
+        .card {
+          width: 180px;
+          border-radius: 10px;
+        }
+
+        .card-body {
+          padding: 14px;
+          font-size: 14px;
+        }
+
+        .card-title {
+          font-size: 12px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="board"></div>
+
+    <script>
+      const board = document.getElementById("board");
+      const messages = [
+        "保持好心情",
+        "多喝水哦",
+        "今天辛苦啦",
+        "早点休息",
+        "记得吃水果",
+        "加油，你可以的",
+        "祝你顺利",
+        "保持微笑呀",
+        "愿所有烦恼都消失",
+        "期待下一次见面",
+        "梦想总会实现",
+        "天气冷了，多穿衣服",
+        "记得给自己放松",
+        "每天都要元气满满",
+        "今天也要好好爱自己",
+        "适当休息一下",
+        "记得按时吃饭",
+        "适当运动身体好",
+        "保护眼睛多休息",
+        "不要熬夜太晚",
+        "深呼吸，放轻松",
+        "烦恼都会过去的",
+        "给自己一个拥抱",
+        "保持积极心态",
+        "相信自己很棒",
+        "每一步都是进步",
+        "坚持就是胜利",
+        "勇敢面对挑战",
+        "注意安全哦",
+        "整理一下心情",
+        "享受当下时光",
+        "发现生活中的小美好",
+        "朋友是温暖的阳光",
+        "分享你的快乐",
+      ];
+
+      const colors = [
+        "#ffe0e3",
+        "#c7f0ff",
+        "#ffd8a8",
+        "#d9f2d9",
+        "#e5d7ff",
+        "#f9f7d9",
+        "#d2f0f8",
+        "#ffd4f5",
+      ];
+
+      const cardStates = new WeakMap();
+      // Reserve a very high层级给全屏卡片，避免被后续元素覆盖
+      const MAXIMIZED_LAYER = 1000000;
+      let activeMaximizedCard = null;
+      const pointerMediaQuery = window.matchMedia("(pointer: coarse)");
+      let isMobile = pointerMediaQuery.matches || window.innerWidth <= 768;
+      let maxCards = isMobile ? 150 : 220; // 限制 DOM 节点数量，减轻移动端压力
+      const initialCardCount = isMobile ? 25 : 40;
+      let spawnInterval = isMobile ? 350 : 200;
+      let zIndexCursor = 200;
+      let spawnTimer = null;
+
+      // 生日惊喜相关变量
+      let cardCounter = 0; // 计数器，记录生成的卡片总数
+      const BIRTHDAY_TRIGGER_COUNT = 50; // 触发生日惊喜的卡片数量
+      let birthdayTriggered = false; // 是否已触发生日惊喜
+
+      document.body.classList.toggle("is-mobile", isMobile);
+
+      function randomFrom(array) {
+        return array[Math.floor(Math.random() * array.length)];
+      }
+
+      function clamp(value, min, max) {
+        return Math.min(Math.max(value, min), max);
+      }
+
+      function applyTransform(card, state) {
+        const scale = state.scale ?? 1;
+        const angle = state.angle ?? 0;
+        card.style.transform = `scale(${scale}) rotate(${angle}deg)`;
+      }
+
+      function bringToFront(card) {
+        if (card === activeMaximizedCard) {
+          card.style.zIndex = MAXIMIZED_LAYER;
+          return;
+        }
+
+        zIndexCursor += 1;
+        if (activeMaximizedCard && zIndexCursor >= MAXIMIZED_LAYER) {
+          zIndexCursor = MAXIMIZED_LAYER - 1;
+        }
+
+        card.style.zIndex = zIndexCursor;
+      }
+
+      function updateBodyMaximizedState() {
+        document.body.classList.toggle(
+          "has-maximized-card",
+          Boolean(activeMaximizedCard)
+        );
+      }
+
+      function scheduleNextSpawn() {
+        clearTimeout(spawnTimer);
+        spawnTimer = setTimeout(() => {
+          if (!document.hidden) {
+            createCard();
+          }
+          scheduleNextSpawn();
+        }, spawnInterval);
+      }
+
+      function syncMobileMode() {
+        const nextIsMobile =
+          pointerMediaQuery.matches || window.innerWidth <= 768;
+        if (nextIsMobile === isMobile) return;
+
+        isMobile = nextIsMobile;
+        maxCards = isMobile ? 150 : 220;
+        spawnInterval = isMobile ? 350 : 200;
+        document.body.classList.toggle("is-mobile", isMobile);
+        scheduleNextSpawn();
+      }
+
+      function handleBoardClick(event) {
+        const control = event.target.closest(".control");
+        if (!control) return;
+
+        const card = control.closest(".card");
+        if (!card || !board.contains(card)) return;
+
+        event.preventDefault();
+
+        if (control.classList.contains("close")) {
+          closeCard(card);
+        } else if (control.classList.contains("minimize")) {
+          minimizeCard(card);
+        } else if (control.classList.contains("maximize")) {
+          toggleMaximize(card);
+        }
+      }
+
+      function handleBoardPointerDown(event) {
+        const card = event.target.closest(".card");
+        if (!card || !board.contains(card)) return;
+
+        const control = event.target.closest(".control");
+        const header = event.target.closest(".card-header");
+        const pointerType = event.pointerType || "mouse";
+        const isPrimaryPointer = event.isPrimary !== false;
+
+        if (header && !control && pointerType !== "touch" && isPrimaryPointer) {
+          startDrag(event, card);
+          return;
+        }
+
+        bringToFront(card);
+      }
+
+      function handleBoardDoubleClick(event) {
+        const header = event.target.closest(".card-header");
+        if (!header || event.target.closest(".control")) return;
+
+        const card = header.closest(".card");
+        if (!card || !board.contains(card)) return;
+
+        toggleMaximize(card);
+      }
+
+      board.addEventListener("click", handleBoardClick);
+      board.addEventListener("pointerdown", handleBoardPointerDown);
+      board.addEventListener("dblclick", handleBoardDoubleClick);
+
+      function closeCard(card) {
+        const state = cardStates.get(card);
+        if (!state || state.closing) return;
+        if (card === activeMaximizedCard) {
+          activeMaximizedCard = null;
+          updateBodyMaximizedState();
+        }
+        state.closing = true;
+        state.scale = 0.1;
+        card.style.opacity = "0";
+        applyTransform(card, state);
+
+        const handleTransitionEnd = (event) => {
+          if (event.propertyName === "opacity") {
+            card.removeEventListener("transitionend", handleTransitionEnd);
+            card.remove();
+          }
+        };
+
+        card.addEventListener("transitionend", handleTransitionEnd);
+      }
+
+      function minimizeCard(card) {
+        const state = cardStates.get(card);
+        if (!state || state.closing) return;
+
+        // 最小化动画：缩小并淡出到底部，结束时移除节点释放内存
+        const runMinimize = () => {
+          state.closing = true;
+          bringToFront(card);
+          const bottom = Math.max(window.innerHeight - 24, 0);
+          const targetLeft = clamp(
+            state.left,
+            16,
+            Math.max(window.innerWidth - card.offsetWidth - 16, 16)
+          );
+
+          state.left = targetLeft;
+          state.top = bottom;
+          state.scale = 0.1;
+          state.angle = 0;
+          card.style.left = `${targetLeft}px`;
+          card.style.top = `${bottom}px`;
+          card.style.opacity = "0.35";
+          applyTransform(card, state);
+
+          const handleTransitionEnd = (event) => {
+            if (event.propertyName === "transform") {
+              card.removeEventListener("transitionend", handleTransitionEnd);
+              card.remove();
+            }
+          };
+
+          card.addEventListener("transitionend", handleTransitionEnd);
+        };
+
+        if (state.maximized) {
+          restoreFromMaximize(card, state);
+          requestAnimationFrame(() => {
+            requestAnimationFrame(runMinimize);
+          });
+          return;
+        }
+
+        runMinimize();
+      }
+
+      function toggleMaximize(card) {
+        const state = cardStates.get(card);
+        if (!state || state.closing) return;
+
+        if (state.maximized) {
+          restoreFromMaximize(card, state);
+        } else {
+          maximizeCard(card, state);
+        }
+      }
+
+      function maximizeCard(card, state) {
+        if (activeMaximizedCard && activeMaximizedCard !== card) {
+          const activeState = cardStates.get(activeMaximizedCard);
+          if (activeState) {
+            restoreFromMaximize(activeMaximizedCard, activeState);
+          }
+        }
+
+        state.beforeMaximize = {
+          left: state.left,
+          top: state.top,
+          scale: state.scale ?? 1,
+          angle: state.angle ?? 0,
+          width: card.offsetWidth,
+          height: card.offsetHeight,
+          inlinePosition: card.style.position,
+        };
+
+        card.classList.add("maximized");
+        card.style.position = "fixed";
+        card.style.left = "0px";
+        card.style.top = "0px";
+        card.style.width = "100vw";
+        card.style.height = "100dvh";
+        card.style.borderRadius = "0";
+
+        state.left = 0;
+        state.top = 0;
+        state.scale = 1;
+        state.angle = 0;
+        applyTransform(card, state);
+        activeMaximizedCard = card;
+        bringToFront(card);
+        state.maximized = true;
+        updateBodyMaximizedState();
+      }
+
+      function restoreFromMaximize(card, state) {
+        const previous = state.beforeMaximize;
+        if (!previous) return;
+
+        card.classList.remove("maximized");
+        card.style.position = previous.inlinePosition || "absolute";
+        card.style.left = `${previous.left}px`;
+        card.style.top = `${previous.top}px`;
+        card.style.width = `${previous.width}px`;
+        card.style.height = `${previous.height}px`;
+        card.style.borderRadius = "12px";
+
+        state.left = previous.left;
+        state.top = previous.top;
+        state.scale = previous.scale ?? 1;
+        state.angle = previous.angle ?? state.angle ?? 0;
+        applyTransform(card, state);
+        state.maximized = false;
+        if (activeMaximizedCard === card) {
+          activeMaximizedCard = null;
+          updateBodyMaximizedState();
+        }
+        bringToFront(card);
+        setTimeout(() => {
+          if (!state.maximized) {
+            card.style.width = "";
+            card.style.height = "";
+            card.style.borderRadius = "";
+            if (previous.inlinePosition) {
+              card.style.position = previous.inlinePosition;
+            } else {
+              card.style.position = "";
+            }
+            state.beforeMaximize = null;
+          }
+        }, 360);
+      }
+
+      function startDrag(event, card) {
+        const control = event.target.closest(".control");
+        if (control) return;
+
+        const state = cardStates.get(card);
+        if (!state || state.closing || state.maximized) return;
+
+        // 鼠标拖拽使用 rAF 节流，避免频繁触发布局计算
+        event.preventDefault();
+        bringToFront(card);
+
+        const header = card.querySelector(".card-header");
+        card.classList.add("dragging");
+        header.classList.add("dragging");
+
+        state.dragging = true;
+        state.dragOffsetX = event.clientX - state.left;
+        state.dragOffsetY = event.clientY - state.top;
+
+        let dragFrame = null;
+        let pendingLeft = state.left;
+        let pendingTop = state.top;
+
+        const commitDrag = () => {
+          dragFrame = null;
+          const maxLeft = Math.max(window.innerWidth - card.offsetWidth, 0);
+          const maxTop = Math.max(window.innerHeight - card.offsetHeight, 0);
+          state.left = clamp(pendingLeft, -card.offsetWidth * 0.4, maxLeft);
+          state.top = clamp(pendingTop, -card.offsetHeight * 0.4, maxTop);
+          card.style.left = `${state.left}px`;
+          card.style.top = `${state.top}px`;
+        };
+
+        const handlePointerMove = (moveEvent) => {
+          if (!state.dragging) return;
+
+          pendingLeft = moveEvent.clientX - state.dragOffsetX;
+          pendingTop = moveEvent.clientY - state.dragOffsetY;
+          if (dragFrame === null) {
+            dragFrame = requestAnimationFrame(commitDrag);
+          }
+        };
+
+        const handlePointerUp = () => {
+          state.dragging = false;
+          card.classList.remove("dragging");
+          header.classList.remove("dragging");
+          if (dragFrame !== null) {
+            cancelAnimationFrame(dragFrame);
+            commitDrag();
+          }
+          document.removeEventListener("pointermove", handlePointerMove);
+          document.removeEventListener("pointerup", handlePointerUp);
+        };
+
+        document.addEventListener("pointermove", handlePointerMove);
+        document.addEventListener("pointerup", handlePointerUp);
+      }
+
+      function createCard() {
+        // 如果已经触发了生日惊喜，则不再创建新卡片
+        if (birthdayTriggered) {
+          return;
+        }
+
+        const card = document.createElement("div");
+        card.className = "card";
+
+        const color = randomFrom(colors);
+        const angleRange = isMobile ? 6 : 10;
+        const angle = (Math.random() - 0.5) * angleRange;
+        const entryScale = isMobile ? 0.8 : 0.65;
+        const cardWidth = isMobile ? 180 : 220;
+        const cardHeight = isMobile ? 130 : 140;
+        const horizontalMargin = isMobile ? 12 : 16;
+        const verticalMargin = isMobile ? 12 : 20;
+        const left =
+          horizontalMargin +
+          Math.random() *
+            Math.max(window.innerWidth - cardWidth - horizontalMargin * 2, 0);
+        const top =
+          verticalMargin +
+          Math.random() *
+            Math.max(window.innerHeight - cardHeight - verticalMargin * 2, 0);
+
+        card.style.background = color;
+        card.style.left = `${left}px`;
+        card.style.top = `${top}px`;
+        card.style.opacity = "0";
+        if (activeMaximizedCard && zIndexCursor >= MAXIMIZED_LAYER - 2) {
+          zIndexCursor = MAXIMIZED_LAYER - 2;
+        }
+        card.style.zIndex = ++zIndexCursor;
+
+        card.innerHTML = `
+					<div class="card-header">
+						<div class="window-controls">
+							<button class="control close" type="button" aria-label="关闭"></button>
+							<button class="control minimize" type="button" aria-label="最小化"></button>
+							<button class="control maximize" type="button" aria-label="最大化"></button>
+						</div>
+						<div class="card-title">温馨提示</div>
+					</div>
+					<div class="card-body">${randomFrom(messages)}</div>
+				`;
+
+        const state = {
+          angle,
+          scale: entryScale,
+          left,
+          top,
+          maximized: false,
+          closing: false,
+        };
+
+        cardStates.set(card, state);
+        applyTransform(card, state);
+        board.appendChild(card);
+
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            state.scale = 1;
+            applyTransform(card, state);
+            card.style.opacity = "1";
+          });
+        });
+
+        // 增加卡片计数器
+        cardCounter++;
+
+        // 检查是否达到触发生日惊喜的条件
+        if (cardCounter >= BIRTHDAY_TRIGGER_COUNT && !birthdayTriggered) {
+          birthdayTriggered = true;
+          // 延迟触发，让当前卡片完全显示
+          setTimeout(() => {
+            triggerBirthdaySurprise();
+          }, 1000);
+        }
+
+        if (board.children.length > maxCards) {
+          const oldest = board.firstElementChild;
+          if (oldest && oldest !== card) {
+            oldest.remove();
+          }
+        }
+      }
+
+      function triggerBirthdaySurprise() {
+        // 清除所有现有的卡片
+        const cards = document.querySelectorAll(".card");
+
+        // 为每个卡片添加消失动画
+        cards.forEach((card, index) => {
+          setTimeout(() => {
+            const state = cardStates.get(card);
+            if (state) {
+              state.closing = true;
+              state.scale = 0;
+              state.angle = (Math.random() - 0.5) * 30; // 随机旋转
+              card.style.opacity = "0";
+              applyTransform(card, state);
+
+              // 动画结束后移除卡片
+              setTimeout(() => {
+                card.remove();
+              }, 800);
+            }
+          }, index * 50); // 依次消失，创造波浪效果
+        });
+
+        // 所有卡片消失后显示信封
+        setTimeout(() => {
+          showEnvelope();
+        }, cards.length * 50 + 800);
+      }
+
+      function showEnvelope() {
+        // 创建信封元素
+        const envelope = document.createElement("div");
+        envelope.className = "envelope-container";
+        envelope.innerHTML = `
+          <div class="letter-image">
+            <div class="envelope-front-emoji">💌</div>
+            <div class="animated-mail">
+              <div class="back-fold"></div>
+              <div class="letter">
+                <div class="letter-border"></div>
+                <div class="letter-title"></div>
+                <div class="letter-context"></div>
+                <div class="letter-stamp">
+                  <div class="letter-stamp-inner">💌</div>
+                </div>
+              </div>
+              <div class="top-fold"></div>
+              <div class="body"></div>
+              <div class="left-fold"></div>
+            </div>
+            <div class="shadow"></div>
+            <div class="envelope-message">点击打开信封</div>
+          </div>
+        `;
+
+        // 添加信封样式
+        const style = document.createElement("style");
+        style.textContent = `
+          .envelope-container {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 10000;
+            cursor: pointer;
+          }
+          
+          .letter-image {
+            position: relative;
+            width: 320px;
+            height: 320px;
+            cursor: pointer;
+            animation: envelopeFloat 3s ease-in-out infinite;
+          }
+          
+          .envelope-front-emoji {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px;
+            z-index: 5;
+            filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+            pointer-events: none;
+          }
+          
+          @keyframes envelopeFloat {
+            0%, 100% { transform: translateY(0) rotateZ(0deg); }
+            50% { transform: translateY(-15px) rotateZ(1deg); }
+          }
+          
+          .animated-mail {
+            position: absolute;
+            height: 240px;
+            width: 320px;
+            transition: 0.4s;
+            transform-style: preserve-3d;
+            perspective: 1000px;
+          }
+          
+          /* 信封部分 一 */
+          .animated-mail .body {
+            position: absolute;
+            bottom: 0;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 0 0 160px 320px;
+            border-color: transparent transparent #ff6b95 transparent;
+            z-index: 2;
+            background: linear-gradient(135deg, #ff6b95 0%, #feca57 100%);
+          }
+          
+          .animated-mail .top-fold {
+            position: absolute;
+            top: 80px;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 80px 160px 0 160px;
+            transform-origin: 50% 0%;
+            transition: transform 0.4s 0.4s, z-index 0.2s 0.4s;
+            border-color: #ff6b95 transparent transparent transparent;
+            z-index: 2;
+            background: linear-gradient(135deg, #ff6b95 0%, #feca57 100%);
+          }
+          
+          /* 信封部分 二 */
+          .animated-mail .back-fold {
+            position: absolute;
+            bottom: 0;
+            width: 320px;
+            height: 160px;
+            background: linear-gradient(135deg, #ff6b95 0%, #feca57 100%);
+            z-index: 0;
+            box-shadow: inset 0 5px 15px rgba(255, 255, 255, 0.3);
+          }
+          
+          .animated-mail .left-fold {
+            position: absolute;
+            bottom: 0;
+            width: 0;
+            height: 0;
+            border-style: solid;
+            border-width: 80px 0 80px 160px;
+            border-color: transparent transparent transparent #ff6b95;
+            z-index: 2;
+          }
+          
+          /* 信纸部分 */
+          .animated-mail .letter {
+            left: 32px;
+            bottom: 0px;
+            position: absolute;
+            width: 256px;
+            height: 96px;
+            background: white;
+            z-index: 1;
+            overflow: hidden;
+            transition: 0.4s 0.2s;
+            border-radius: 5px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+          }
+          
+          .animated-mail .letter .letter-border {
+            height: 16px;
+            width: 100%;
+            background: repeating-linear-gradient(
+              -45deg,
+              #ff6b95,
+              #ff6b95 12px,
+              transparent 12px,
+              transparent 28px
+            );
+          }
+          
+          /*信纸部分 二*/
+          .animated-mail .letter .letter-title {
+            margin-top: 16px;
+            margin-left: 8px;
+            height: 16px;
+            width: 40%;
+            background: #ff6b95;
+            border-radius: 2px;
+          }
+          
+          .animated-mail .letter .letter-context {
+            margin-top: 16px;
+            margin-left: 8px;
+            height: 16px;
+            width: 20%;
+            background: #ff6b95;
+            border-radius: 2px;
+          }
+          
+          .animated-mail .letter .letter-stamp {
+            margin-top: 48px;
+            margin-left: 192px;
+            border-radius: 100%;
+            height: 48px;
+            width: 48px;
+            background: #ff6b95;
+            opacity: 0.3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: white;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            transform: rotate(-10deg);
+          }
+          
+          .animated-mail .letter .letter-stamp-inner {
+            font-size: 24px;
+          }
+          
+          /*信封阴影*/
+          .shadow {
+            position: absolute;
+            top: 320px;
+            left: 50%;
+            width: 640px;
+            height: 48px;
+            transition: 0.4s;
+            transform: translateX(-50%);
+            border-radius: 100%;
+            background: radial-gradient(
+              rgba(0, 0, 0, 0.5),
+              rgba(0, 0, 0, 0),
+              rgba(0, 0, 0, 0)
+            );
+          }
+          
+          /* 信封消息 */
+          .envelope-message {
+            position: absolute;
+            bottom: -50px;
+            left: 50%;
+            transform: translateX(-50%);
+            color: #fff;
+            font-size: 20px;
+            font-weight: bold;
+            text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.3);
+            animation: pulse 2s infinite;
+            white-space: nowrap;
+          }
+          
+          @keyframes pulse {
+            0%, 100% { opacity: 0.8; }
+            50% { opacity: 1; }
+          }
+          
+          /*hover 动态效果 */
+          .letter-image:hover .animated-mail {
+            transform: translateY(80px);
+          }
+          
+          .letter-image:hover .animated-mail .top-fold {
+            transition: transform 0.4s, z-index 0.2s;
+            transform: rotateX(180deg);
+            z-index: 0;
+          }
+          
+          .letter-image:hover .animated-mail .letter {
+            height: 288px;
+          }
+          
+          .letter-image:hover .shadow {
+            width: 400px;
+          }
+          
+          .letter-image:hover .envelope-message {
+            opacity: 0;
+          }
+          
+          .letter-image:hover .envelope-front-emoji {
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.8);
+          }
+          
+          /* 点击后保持打开状态 */
+          .letter-image.open .animated-mail {
+            transform: translateY(80px);
+          }
+          
+          .letter-image.open .animated-mail .top-fold {
+            transition: transform 0.4s, z-index 0.2s;
+            transform: rotateX(180deg);
+            z-index: 0;
+          }
+          
+          .letter-image.open .animated-mail .letter {
+            height: 288px;
+          }
+          
+          .letter-image.open .shadow {
+            width: 400px;
+          }
+          
+          .letter-image.open .envelope-message {
+            opacity: 0;
+          }
+          
+          .letter-image.open .envelope-front-emoji {
+            opacity: 0;
+            transform: translate(-50%, -50%) scale(0.8);
+          }
+          
+          .letter-content {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            color: #333;
+          }
+          
+          .letter-content h3 {
+            font-size: 24px;
+            margin-bottom: 15px;
+            color: #ff6b95;
+          }
+          
+          .letter-content p {
+            font-size: 16px;
+            line-height: 1.5;
+            color: #666;
+          }
+          
+          .birthday-message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0);
+            background: linear-gradient(135deg, #ff6b95 0%, #feca57 100%);
+            color: white;
+            padding: 40px;
+            border-radius: 25px;
+            max-width: 600px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+            z-index: 10001;
+            transition: transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+            overflow: hidden;
+          }
+          
+          .birthday-message::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: linear-gradient(45deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0) 70%);
+            border-radius: 25px;
+            z-index: -1;
+          }
+          
+          .birthday-message::after {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.1) 0%, rgba(255, 255, 255, 0) 70%);
+            animation: sparkle 3s infinite;
+            z-index: -1;
+          }
+          
+          @keyframes sparkle {
+            0%, 100% { transform: rotate(0deg); opacity: 0.5; }
+            50% { transform: rotate(180deg); opacity: 0.8; }
+          }
+          
+          .birthday-message.show {
+            transform: translate(-50%, -50%) scale(1);
+          }
+          
+          .birthday-message h2 {
+            font-size: 36px;
+            margin-bottom: 25px;
+            color: #fff;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.3);
+            position: relative;
+            display: inline-block;
+          }
+          
+          .birthday-message h2::after {
+            content: '';
+            position: absolute;
+            bottom: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 80%;
+            height: 3px;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.8) 50%, rgba(255, 255, 255, 0) 100%);
+            border-radius: 3px;
+          }
+          
+          .birthday-message p {
+            font-size: 20px;
+            line-height: 1.6;
+            margin-bottom: 18px;
+            color: #fff;
+            text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.2);
+            position: relative;
+            z-index: 1;
+          }
+          
+          .birthday-message .signature {
+            font-style: italic;
+            margin-top: 30px;
+            font-size: 22px;
+            font-weight: bold;
+            position: relative;
+            display: inline-block;
+          }
+          
+          .birthday-message .signature::before {
+            content: '';
+            position: absolute;
+            top: -5px;
+            left: -10px;
+            right: -10px;
+            bottom: -5px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            z-index: -1;
+          }
+          
+          .reset-button {
+            margin-top: 30px;
+            padding: 15px 30px;
+            background: white;
+            color: #ff6b95;
+            border: none;
+            border-radius: 50px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            position: relative;
+            overflow: hidden;
+          }
+          
+          .reset-button::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.4) 50%, rgba(255, 255, 255, 0) 100%);
+            transition: left 0.5s ease;
+          }
+          
+          .reset-button:hover::before {
+            left: 100%;
+          }
+          
+          .reset-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+          }
+          
+          .reset-button:active {
+            transform: scale(0.98);
+          }
+        `;
+        document.head.appendChild(style);
+
+        // 添加到页面
+        document.body.appendChild(envelope);
+
+        // 添加点击事件
+        envelope.addEventListener("click", function () {
+          openEnvelope(envelope);
+        });
+      }
+
+      function openEnvelope(envelope) {
+        // 触发信封打开动画 - 添加hover效果
+        const letterImage = envelope.querySelector(".letter-image");
+        letterImage.classList.add("open");
+
+        // 创建生日消息 - 使用信纸样式填满整个屏幕
+        const message = document.createElement("div");
+        message.className = "letter-fullscreen";
+        message.innerHTML = `
+          <div class="letter-border-top"></div>
+          <div class="letter-content-fullscreen">
+            <h2 class="letter-title-fullscreen">🎂 生日快乐，我的宝贝！🎂</h2>
+            <div class="letter-text-container">
+              <p class="letter-line" data-delay="0">今天是你21岁的生日，愿你的每一天都充满阳光和欢笑！</p>
+              <p class="letter-line" data-delay="1">愿你的梦想如星辰般璀璨，愿你的未来如花朵般绚烂！</p>
+              <p class="letter-line" data-delay="2">在这个特别的日子里，我想对你说：你是我生命中最美好的礼物！</p>
+              <p class="letter-line" data-delay="3">愿你的笑容永远灿烂，愿你的心灵永远年轻！</p>
+              <p class="letter-line" data-delay="4">生日快乐，我的爱人！愿我们一起走过更多美好的时光！</p>
+              <p class="letter-line signature" data-delay="5">永远爱你的我</p>
+            </div>
+            <div class="letter-stamp-fullscreen">
+              <div class="letter-stamp-inner">💌</div>
+            </div>
+            <button class="reset-button-fullscreen">蛋糕</button>
+          </div>
+        `;
+        document.body.appendChild(message);
+
+        // 添加信纸全屏样式
+        const style = document.createElement("style");
+        style.textContent = `
+          .letter-fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background: white;
+            z-index: 10001;
+            transform: translateY(100vh);
+            transition: transform 1.2s cubic-bezier(0.25, 1, 0.5, 1);
+            overflow: hidden;
+            box-shadow: 0 0 50px rgba(0, 0, 0, 0.3);
+          }
+          
+          .letter-border-top {
+            height: 20px;
+            width: 100%;
+            background: repeating-linear-gradient(
+              -45deg,
+              #ff6b95,
+              #ff6b95 15px,
+              transparent 15px,
+              transparent 35px
+            );
+          }
+          
+          .letter-content-fullscreen {
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: calc(100vh - 20px);
+            padding: 40px;
+            box-sizing: border-box;
+            background: linear-gradient(to bottom, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0.95));
+          }
+          
+          .letter-title-fullscreen {
+            font-size: clamp(28px, 5vw, 48px);
+            color: #ff6b95;
+            text-align: center;
+            margin-bottom: 40px;
+            font-weight: bold;
+            position: relative;
+            opacity: 0;
+            transform: translateY(20px);
+            animation: fadeInUp 0.8s ease forwards;
+            animation-delay: 0.3s;
+          }
+          
+          .letter-title-fullscreen::after {
+            content: '';
+            position: absolute;
+            bottom: -15px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60%;
+            height: 3px;
+            background: linear-gradient(90deg, rgba(255, 107, 149, 0) 0%, rgba(255, 107, 149, 0.8) 50%, rgba(255, 107, 149, 0) 100%);
+            border-radius: 3px;
+          }
+          
+          .letter-text-container {
+            max-width: 800px;
+            width: 100%;
+            text-align: center;
+          }
+          
+          .letter-line {
+            font-size: clamp(18px, 3vw, 26px);
+            line-height: 1.8;
+            margin-bottom: 25px;
+            color: #333;
+            opacity: 0;
+            transform: translateY(20px);
+            transition: all 0.8s ease;
+            position: relative;
+          }
+          
+          .letter-line.signature {
+            font-style: italic;
+            margin-top: 40px;
+            font-size: clamp(20px, 3.5vw, 28px);
+            font-weight: bold;
+            color: #ff6b95;
+            position: relative;
+            display: inline-block;
+          }
+          
+          .letter-line.signature::before {
+            content: '';
+            position: absolute;
+            top: -5px;
+            left: -15px;
+            right: -15px;
+            bottom: -5px;
+            background: rgba(255, 107, 149, 0.1);
+            border-radius: 20px;
+            z-index: -1;
+          }
+          
+          .letter-stamp-fullscreen {
+            position: absolute;
+            bottom: 60px;
+            right: 60px;
+            border-radius: 100%;
+            height: 80px;
+            width: 80px;
+            background: #ff6b95;
+            opacity: 0.3;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            color: white;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            transform: rotate(-10deg);
+            z-index: 2;
+          }
+          
+          .letter-stamp-inner {
+            font-size: 40px;
+          }
+          
+          .reset-button-fullscreen {
+            position: absolute;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 40px;
+            background: #ff6b95;
+            color: white;
+            border: none;
+            border-radius: 50px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 5px 15px rgba(255, 107, 149, 0.3);
+            z-index: 3;
+          }
+          
+          .reset-button-fullscreen:hover {
+            transform: translateX(-50%) scale(1.05);
+            box-shadow: 0 8px 20px rgba(255, 107, 149, 0.4);
+            background: #ff5a85;
+          }
+          
+          .reset-button-fullscreen:active {
+            transform: translateX(-50%) scale(0.98);
+          }
+          
+          @keyframes fadeInUp {
+            from {
+              opacity: 0;
+              transform: translateY(20px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+          
+          /* 信纸纹理效果 */
+          .letter-content-fullscreen::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image: 
+              linear-gradient(rgba(255, 255, 255, 0.8) 1px, transparent 1px),
+              linear-gradient(90deg, rgba(255, 255, 255, 0.8) 1px, transparent 1px);
+            background-size: 20px 20px;
+            z-index: -1;
+            opacity: 0.3;
+          }
+          
+          /* 蛋糕页面样式 */
+          .cake-fullscreen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100vh;
+            background: linear-gradient(135deg, #ffe6ea 0%, #fff5f7 100%);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 10002;
+            transform: translateY(100vh);
+            transition: transform 1.2s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+          }
+          
+          .cake-container {
+            position: relative;
+            height: 510px;
+            width: 510px;
+            margin-bottom: 50px;
+          }
+          
+          /* 蛋糕样式 - 使用更精美的设计 */
+          #cheesecake {
+            position: relative;
+            height: 510px;
+            width: 510px;
+            margin: 0 auto;
+          }
+
+          #cheesecake div {
+            position: absolute;
+          }
+
+          #cheesecake div::before,
+          #cheesecake div::after {
+            content: '';
+            position: absolute;
+            display: block;
+          }
+
+          #cheesecake .base {
+            width: 170px;
+            height: 142px;
+            background-image: linear-gradient(#f69a9c 20px, #f7e498 20px, #f7e498 90px, #f8e182 90px, #f8e182 127px, #deac59 127px);
+            bottom: 156px;
+            left: 170px;
+            border-top-left-radius: 15px;
+            border-top-right-radius: 15px;
+            border: 6px solid #414042;
+          }
+
+          #cheesecake .base::before {
+            width: 17px;
+            height: 42px;
+            border-radius: 0 0 17px 17px;
+            background-color: #f69a9c;
+            box-shadow: 17px -17px #f69a9c, 95px -17px #f69a9c, 126px 0 #f69a9c;
+            left: 13px;
+            top: 19px;
+          }
+
+          #cheesecake .base::after {
+            width: 4px;
+            height: 4px;
+            background-color: #deac59;
+            border-radius: 4px;
+            box-shadow: 10px -10px #deac59;
+            right: 15px;
+            bottom: 20px;
+          }
+
+          #cheesecake .toppings {
+            width: 108px;
+            height: 22px;
+            border: 6px solid #414042;
+            border-radius: 22px;
+            background-color: white;
+            top: 184px;
+            left: 200px;
+          }
+
+          #cheesecake .toppings::before {
+            width: 71px;
+            height: 22px;
+            border: 6px solid #414042;
+            border-radius: 22px;
+            background-color: white;
+            top: -22px;
+            left: 12px;
+            z-index: -1;
+          }
+
+          #cheesecake .toppings::after {
+            width: 22px;
+            height: 22px;
+            border: 6px solid #414042;
+            border-radius: 22px;
+            background-color: #f26d72;
+            top: -44px;
+            left: 36px;
+            z-index: -1;
+          }
+
+          #cheesecake .plate {
+            width: 264px;
+            height: 6px;
+            background-color: #414042;
+            border-radius: 6px;
+            bottom: 156px;
+            left: 130px;
+          }
+
+          #cheesecake .plate::before {
+            width: 235px;
+            height: 10px;
+            background-color: #cdfffb;
+            border: 6px solid #414042;
+            border-radius: 0 0 20px 20px;
+            left: 8px;
+          }
+
+          #cheesecake .plate::after {
+            width: 10px;
+            height: 10px;
+            border-radius: 10px;
+            border: 6px solid transparent;
+            border-left: 6px solid #414042;
+            bottom: 195px;
+            left: 128px;
+            transform: rotate(45deg);
+            -webkit-transform: rotate(45deg);
+            -moz-transform: rotate(45deg);
+            -ms-transform: rotate(45deg);
+            -o-transform: rotate(45deg);
+          }
+
+          #cheesecake .glasee {
+            width: 40px;
+            height: 4px;
+            background-color: white;
+            border-radius: 4px;
+            top: 212px;
+            left: 182px;
+          }
+
+          #cheesecake .glasee::after {
+            width: 13px;
+            height: 4px;
+            background-color: white;
+            border-radius: 4px;
+            left: 46px;
+          }
+
+          #cheesecake .glasee::before {
+            width: 6px;
+            height: 6px;
+            background-color: white;
+            border-radius: 6px;
+            top: -55px;
+            left: 69px;
+          }
+          
+          /* 蜡烛样式 - 适配新蛋糕设计 */
+          .candles {
+            position: absolute;
+            top: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            justify-content: center;
+            width: 100%;
+            z-index: 10;
+          }
+          
+          .candle {
+            width: 8px;
+            height: 25px;
+            background: #ffffff;
+            margin: 0 8px;
+            border-radius: 4px;
+            position: relative;
+            box-shadow: 0 0 5px rgba(0, 0, 0, 0.2);
+          }
+          
+          .flame {
+            position: absolute;
+            top: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 12px;
+            height: 16px;
+            background: radial-gradient(circle, #ffeb3b 0%, #ff9800 100%);
+            border-radius: 50% 50% 50% 50% / 60% 60% 40% 40%;
+            animation: flicker 1s infinite alternate;
+          }
+          
+          @keyframes flicker {
+            0% { transform: translateX(-50%) scale(1) rotate(-2deg); }
+            100% { transform: translateX(-50%) scale(1.1) rotate(2deg); }
+          }
+          
+          .cake-title {
+            font-size: 32px;
+            font-weight: bold;
+            color: #ff6b95;
+            margin-bottom: 20px;
+            text-align: center;
+            text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.1);
+          }
+          
+          .cake-buttons {
+            display: flex;
+            gap: 20px;
+            margin-top: 30px;
+          }
+          
+          .cake-button {
+            padding: 12px 30px;
+            background: #ff6b95;
+            color: white;
+            border: none;
+            border-radius: 50px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(255, 107, 149, 0.3);
+          }
+          
+          .cake-button:hover {
+            transform: scale(1.05);
+            box-shadow: 0 6px 16px rgba(255, 107, 149, 0.4);
+            background: #ff5a85;
+          }
+          
+          .cake-button:active {
+            transform: scale(0.98);
+          }
+          
+          .cake-button.secondary {
+            background: #6c757d;
+            box-shadow: 0 4px 12px rgba(108, 117, 125, 0.3);
+          }
+          
+          .cake-button.secondary:hover {
+            background: #5a6268;
+            box-shadow: 0 6px 16px rgba(108, 117, 125, 0.4);
+          }
+        `;
+        document.head.appendChild(style);
+
+        // 显示信纸全屏动画
+        setTimeout(() => {
+          // 隐藏信封
+          envelope.style.display = "none";
+
+          message.style.transform = "translateY(0)";
+
+          // 逐行显示文字内容
+          const letterLines = message.querySelectorAll(".letter-line");
+          letterLines.forEach((line, index) => {
+            const delay = parseInt(line.getAttribute("data-delay"));
+            setTimeout(() => {
+              line.style.opacity = "1";
+              line.style.transform = "translateY(0)";
+            }, 800 + delay * 600); // 延迟计算，每行间隔600ms
+          });
+        }, 100);
+
+        // 添加重置按钮事件
+        const resetButton = message.querySelector(".reset-button-fullscreen");
+        resetButton.addEventListener("click", () => {
+          showCakePage(envelope, message);
+        });
+      }
+
+      // 显示蛋糕页面
+      function showCakePage(envelope, message) {
+        // 创建蛋糕页面
+        const cakePage = document.createElement("div");
+        cakePage.className = "cake-fullscreen";
+        cakePage.innerHTML = `
+          <div class="cake-title">🎂 生日蛋糕 🎂</div>
+          <div class="cake-container">
+            <div id="cheesecake">
+              <div class="toppings"></div>
+              <div class="base"></div>
+              <div class="plate"></div>
+              <div class="glasee"></div>
+              <div class="candles">
+                <div class="candle">
+                  <div class="flame"></div>
+                </div>
+                <div class="candle">
+                  <div class="flame"></div>
+                </div>
+                <div class="candle">
+                  <div class="flame"></div>
+                </div>
+                <div class="candle">
+                  <div class="flame"></div>
+                </div>
+                <div class="candle">
+                  <div class="flame"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="cake-buttons">
+            <button class="cake-button" id="blow-candles">吹蜡烛</button>
+            <button class="cake-button secondary" id="reset-all">重新开始</button>
+          </div>
+        `;
+        document.body.appendChild(cakePage);
+
+        // 显示蛋糕页面
+        setTimeout(() => {
+          cakePage.style.transform = "translateY(0)";
+        }, 100);
+
+        // 添加吹蜡烛事件
+        const blowButton = cakePage.querySelector("#blow-candles");
+        blowButton.addEventListener("click", () => {
+          blowCandles(cakePage);
+        });
+
+        // 添加重新开始事件
+        const resetButton = cakePage.querySelector("#reset-all");
+        resetButton.addEventListener("click", () => {
+          resetBirthdaySurprise(envelope, message, cakePage);
+        });
+      }
+
+      // 吹蜡烛效果
+      function blowCandles(cakePage) {
+        const flames = cakePage.querySelectorAll(".flame");
+        flames.forEach((flame, index) => {
+          setTimeout(() => {
+            flame.style.transition = "opacity 0.5s, transform 0.5s";
+            flame.style.opacity = "0";
+            flame.style.transform = "translateX(-50%) scale(0)";
+          }, index * 100);
+        });
+
+        // 显示祝福消息
+        setTimeout(() => {
+          const wishMessage = document.createElement("div");
+          wishMessage.style.position = "absolute";
+          wishMessage.style.top = "20%";
+          wishMessage.style.left = "50%";
+          wishMessage.style.transform = "translateX(-50%)";
+          wishMessage.style.fontSize = "24px";
+          wishMessage.style.fontWeight = "bold";
+          wishMessage.style.color = "#ff6b95";
+          wishMessage.style.textAlign = "center";
+          wishMessage.style.opacity = "0";
+          wishMessage.style.transition = "opacity 1s";
+          wishMessage.innerHTML = "许个愿吧！<br>愿望一定会实现的！";
+          cakePage.appendChild(wishMessage);
+
+          setTimeout(() => {
+            wishMessage.style.opacity = "1";
+          }, 100);
+        }, flames.length * 100 + 200);
+      }
+
+      function resetBirthdaySurprise(envelope, message, cakePage = null) {
+        // 先隐藏蛋糕页面（如果存在）
+        if (cakePage) {
+          cakePage.style.transform = "translateY(100vh)";
+        }
+
+        // 先隐藏信纸全屏
+        message.style.transform = "translateY(100vh)";
+
+        // 等待动画完成后移除元素
+        setTimeout(() => {
+          if (envelope) envelope.remove();
+          if (message) message.remove();
+          if (cakePage) cakePage.remove();
+
+          // 重置生日惊喜状态
+          birthdayTriggered = false;
+          cardCounter = 0;
+
+          // 重新开始生成卡片
+          for (let i = 0; i < initialCardCount; i++) {
+            setTimeout(createCard, i * (isMobile ? 60 : 40));
+          }
+          scheduleNextSpawn();
+        }, 1200); // 与CSS过渡时间匹配
+      }
+
+      for (let i = 0; i < initialCardCount; i++) {
+        setTimeout(createCard, i * (isMobile ? 60 : 40));
+      }
+
+      scheduleNextSpawn();
+
+      document.addEventListener("visibilitychange", () => {
+        if (!document.hidden) {
+          scheduleNextSpawn();
+        }
+      });
+
+      if (typeof pointerMediaQuery.addEventListener === "function") {
+        pointerMediaQuery.addEventListener("change", syncMobileMode);
+      } else if (typeof pointerMediaQuery.addListener === "function") {
+        pointerMediaQuery.addListener(syncMobileMode);
+      }
+
+      window.addEventListener("resize", syncMobileMode);
+    </script>
+  </body>
+</html>
